@@ -1,0 +1,6 @@
+body{font:14px/1.6 system-ui,sans-serif;color:#172337;background:#f5f7fb;max-width:820px;margin:20px;padding:0 12px}
+h1{font-size:22px}h2{font-size:16px;margin-top:28px}a{color:#175cd3}label{display:block;font-weight:600;margin-top:20px}
+input{font:inherit;width:100%;max-width:560px;padding:10px;border:1px solid #bdc9d8;border-radius:6px;background:white}
+button{font:inherit;padding:9px 14px;border:1px solid #bdc9d8;border-radius:6px;color:#175cd3;background:white;cursor:pointer}
+button:disabled{opacity:.5;cursor:default}.actions{display:flex;gap:10px;margin-top:14px}.note{color:#526176;margin-top:24px}
+#status{font-weight:600}#counts{color:#526176}

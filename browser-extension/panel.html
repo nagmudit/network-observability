@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>ATO Browser Observer</title><link rel="stylesheet" href="panel.css"></head>
+<body>
+<h1>ATO Browser Observer</h1>
+<p>Observe this tab's requests and readable bodies. No certificate installation or proxy configuration is needed.</p>
+<p>Open <a href="http://127.0.0.1:8765/" target="_blank" rel="noopener">the local viewer</a>, reveal its browser pairing key, and paste it here.</p>
+<label for="pairing">Pairing key</label><input id="pairing" type="password" autocomplete="off" spellcheck="false">
+<div class="actions"><button id="start">Start recording this tab</button><button id="stop" disabled>Stop</button></div>
+<p id="status" role="status">Not recording.</p>
+<p id="counts">Saved: 0 · Dropped: 0</p>
+<h2>How to capture</h2>
+<ol><li>Start recording here.</li><li>Reload the inspected page so initial requests are visible.</li><li>Use the website while keeping DevTools open.</li><li>Open requests in the local viewer to inspect their headers and bodies.</li></ol>
+<p class="note">Only this inspected tab is observed. Bodies are saved after requests finish, up to 128 KiB each (or a smaller gateway limit). Infinite streams, WebSocket frames, unavailable browser bodies, desktop apps, and VS Code are not captured by this connector. Sensitive headers are redacted; bodies and URLs may contain private data.</p>
+<script type="module" src="panel.js"></script>
+</body></html>

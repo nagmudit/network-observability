@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "ATO Browser Observer",
+  "version": "0.1.0",
+  "description": "Observe the inspected tab's network requests and bodies in your local ATO viewer.",
+  "devtools_page": "devtools.html",
+  "host_permissions": ["http://127.0.0.1:8765/*"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src http://127.0.0.1:8765"
+  }
+}

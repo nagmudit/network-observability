@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ATO Gateway · Local network capture</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f4f7fb;color:#172337;font:14px system-ui,sans-serif}
+header{background:#fff;border-bottom:1px solid #dce3ec;padding:22px 28px}
+h1{font-size:23px;margin:0 0 5px}h2{font-size:17px;margin:0 0 14px}h3{font-size:14px;margin:20px 0 8px}
+p{line-height:1.6;margin:6px 0}.muted{color:#526176}.status{margin-top:12px;font-weight:600}
+main{padding:22px 28px}.notice{padding:16px;background:#fff8e5;border:1px solid #e9d393;border-radius:10px;margin-bottom:20px}
+.notice.ready{background:#eaf7ee;border-color:#b4dbbf}.notice pre{background:transparent;padding:8px 0}
+.layout{display:grid;grid-template-columns:230px minmax(0,1fr);gap:18px}.panel{background:#fff;border:1px solid #dce3ec;border-radius:10px;padding:18px;min-width:0}
+button,input{font:inherit;border:1px solid #dce3ec;border-radius:6px;padding:8px 12px}
+button{background:#fff;cursor:pointer;color:#175cd3}button:hover{background:#edf3fe}button:disabled{opacity:.5;cursor:default}
+input{min-width:240px}.tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.scroll{overflow:auto;max-height:440px}table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:10px 8px;border-bottom:1px solid #dce3ec;text-align:left;vertical-align:top}
+th{color:#526176;position:sticky;top:0;background:white}td.path{max-width:360px;overflow-wrap:anywhere}
+tr.selected{background:#edf3fe}.origin{display:block;width:100%;text-align:left;margin:5px 0;overflow-wrap:anywhere}
+#origins{max-height:520px;overflow:auto}.pager{margin-top:12px;display:flex;gap:10px;align-items:center}
+#inspector{margin-top:18px}.payloads{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow:auto;background:#f4f7fb;border-radius:6px;padding:12px;font:12px/1.6 ui-monospace,Consolas,monospace}
+a{color:#175cd3}.note{color:#845600}.error{color:#b42318}details{margin-top:18px}summary{cursor:pointer;font-weight:600}
+small{font-size:12px}.badge{font-size:11px;color:#526176}#detail-url{overflow-wrap:anywhere}
+@media(max-width:1000px){.layout,.payloads{grid-template-columns:1fr}#origins{max-height:160px}main,header{padding:16px}}
+</style></head><body>
+<header><h1>ATO Gateway</h1><p class="muted">Local network capture · Traffic stays on this device</p><div id="status" class="status" role="status">Connecting to the gateway…</div></header>
+<main>
+<section id="setup" class="notice"><strong id="setup-title">Checking capture setup…</strong><p id="setup-text"></p><pre id="setup-command"></pre><a id="certificate-download" href="/api/certificate" download>Download public CA certificate</a></section>
+<section class="panel" style="margin-bottom:20px"><h2>Connect the browser observer</h2><p>Load the ATO Browser Observer extension, open DevTools on the tab you want to observe, select ATO, and paste the pairing key below. Start recording there, then reload the inspected page. Keep DevTools open.</p><p class="muted">Browser observations can include HTTPS bodies without CA installation. This connector observes one tab; desktop apps and VS Code require a separate capture method.</p><button id="reveal-pairing">Reveal browser pairing key</button><input id="pairing-key" readonly hidden aria-label="Browser pairing key"><span id="pairing-status" class="muted"></span></section>
+<div class="layout">
+<aside class="panel"><h2>Origins</h2><p class="muted"><small>Hosts across saved sessions. Counts include tunnel metadata.</small></p><button id="all-hosts" class="origin">All hosts</button><div id="origins"></div></aside>
+<section class="panel"><h2>Requests and connections</h2>
+<div class="tools"><input id="host" type="search" placeholder="Filter by host" aria-label="Filter by host"><button id="refresh">Refresh</button><span id="count" class="muted"></span></div>
+<div class="scroll"><table><thead><tr><th>Time</th><th>Host</th><th>Method</th><th>Path / connection</th><th>Status</th><th>Duration</th><th>Saved bytes</th></tr></thead><tbody id="rows"></tbody></table></div>
+<p id="empty" class="muted" hidden>No traffic matches this host. In proxy mode, configure the target browser/app to use the proxy. In local mode, check your process filter.</p>
+<div class="pager"><button id="previous">Previous</button><span id="page" class="muted"></span><button id="next">Next</button></div>
+<section id="inspector" hidden><h2>Request inspector</h2><p id="detail-url"></p><p id="detail-note" class="note"></p><p id="detail-error" class="error"></p>
+<details><summary>Connection, protocol, and session</summary><pre id="connection"></pre></details>
+<div class="payloads">
+<div><h3>Request headers</h3><pre id="request-headers"></pre><h3>Request body</h3><p id="request-info" class="muted"></p><a id="request-download">Download captured request bytes</a><pre id="request-body"></pre></div>
+<div><h3>Response headers</h3><pre id="response-headers"></pre><h3>Response body</h3><p id="response-info" class="muted"></p><a id="response-download">Download captured response bytes</a><pre id="response-body"></pre></div>
+</div>
+<details><summary>Server-sent events (indexed after response ends)</summary><pre id="events"></pre></details>
+<details><summary>WebSocket messages (latest 1,000)</summary><pre id="websockets"></pre></details>
+</section></section></div>
+<details class="panel"><summary>Capture diagnostics</summary><pre id="diagnostics">No diagnostics.</pre></details>
+<p class="muted"><small>Payloads are bounded; sensitive headers are redacted by default. Bodies and URLs may contain private data. Process attribution, pinned app decryption, and complete device/protocol coverage are not guaranteed.</small></p>
+</main><script>
+const byId=id=>document.getElementById(id);
+let selected=null,offset=0,busy=false;
+const limit=100;
+async function get(path){const r=await fetch(path,{cache:'no-store'});if(!r.ok)throw new Error((await r.text())||r.statusText);return r.json()}
+function pretty(value){return JSON.stringify(value,null,2)}
+function cell(row,value,className){const td=document.createElement('td');td.textContent=value??'—';if(className)td.className=className;row.append(td);return td}
+function formatBody(p){if(!p.available)return 'No saved body. Empty bodies and encrypted passthrough have no payload.';
+ if(p.format==='base64')return 'Binary or encoded bytes (base64):\n'+p.preview;
+ try{return pretty(JSON.parse(p.preview))}catch{return p.preview}}
+async function inspect(id){selected=id;const f=await get('/api/flows/'+encodeURIComponent(id));if(selected!==id)return;
+ byId('inspector').hidden=false;byId('detail-url').textContent=f.method+' '+f.url;
+ byId('detail-note').textContent=f.capture_note||(!f.complete?'Incomplete capture':'Completed HTTP exchange');byId('detail-error').textContent=f.error||'';
+ byId('connection').textContent=pretty({session_id:f.session_id,mode:f.mode,kind:f.capture_kind,process_name:f.process_name,process_pid:f.process_pid,...f.connection_info});
+ for(const side of ['request','response']){const p=f[side+'_payload'];byId(side+'-headers').textContent=pretty(f[side+'_headers']);
+ byId(side+'-info').textContent=p.captured_bytes+' bytes saved · '+(p.observed_wire_bytes??'unknown')+(p.size_source==='browser'?' browser-reported bytes':' wire bytes observed')+' · '+p.body_encoding+(p.truncated?' · CAPTURE TRUNCATED':'')+(p.preview_limited?' · Preview limited to 64 KiB':'');
+ byId(side+'-body').textContent=formatBody(p);const link=byId(side+'-download');link.hidden=!p.available;link.href='/api/flows/'+encodeURIComponent(id)+'/payload/'+side;link.download=side+'-payload.bin';}
+ byId('events').textContent=pretty(f.stream_events);byId('websockets').textContent=pretty(f.websocket_messages);
+}
+async function load(){if(busy)return;busy=true;
+ try{const host=byId('host').value;const [s,flows,origins,diagnostics]=await Promise.all([get('/api/status'),get('/api/flows?limit='+limit+'&offset='+offset+'&host='+encodeURIComponent(host)),get('/api/origins'),get('/api/diagnostics')]);
+ const active=s.capture&&s.capture.status==='recording';const browser=s.mode==='browser';byId('status').textContent=(active?'Session active':'No active capture')+' · '+(s.mode||'idle')+(browser?' · '+(s.session_stats?.browser_flows||0)+' browser observations saved in this session':' · HTTPS '+(s.https_mode||'idle')+' · '+s.proxy);
+ const decrypt=s.https_mode==='decrypt';byId('setup').classList.toggle('ready',decrypt||browser);
+ byId('setup-title').textContent=browser?'Browser observation: HTTPS bodies supplied by DevTools':decrypt?'HTTPS decryption enabled':'HTTPS passthrough: destination metadata only';
+ byId('setup-text').textContent=browser?'No certificate trust or proxy routing is required. Pair the browser extension below and record the inspected tab. Bodies become available after requests finish; open-ended streams and WebSocket frames are not collected by this connector.':decrypt?'Clients must trust the local CA. If an app rejects interception, use a host exclusion or passthrough.':'A proxy sees only applications routed through it. For browser HTTPS bodies without a CA, use the browser observer below. Proxy decryption requires the target client to trust the local CA.';
+ byId('setup-command').textContent=browser?'Start server: ato observe\nBrowser: DevTools > ATO > Start recording, then reload the inspected page':'For browser observation without a CA: ato observe\nFor proxy decryption: ato cert, configure client trust, then ato start --https decrypt';
+ byId('certificate-download').hidden=browser;
+ byId('empty').textContent=browser?'No browser observations match this host. Load the extension, pair it in DevTools > ATO, start recording, then reload and use the inspected page.':'No traffic matches this host. In proxy mode, configure the target browser/app to use the proxy. In local mode, check your process filter.';
+ byId('rows').replaceChildren();for(const f of flows){const row=document.createElement('tr');if(f.id===selected)row.classList.add('selected');
+ cell(row,new Date(f.seen_at).toLocaleTimeString());cell(row,f.host);cell(row,f.method);const pathCell=cell(row,'','path');
+ const open=document.createElement('button');open.textContent=f.path||f.url||'Connection';open.addEventListener('click',()=>inspect(f.id).catch(showError));pathCell.append(open);
+ const kind=document.createElement('div');kind.className='badge';kind.textContent=f.mode==='browser'?'Browser observation':f.capture_kind==='http'?'HTTP exchange':'Encrypted / tunnel metadata';pathCell.append(kind);
+ cell(row,f.status??(f.error?'Error':'—'));cell(row,f.duration_ms==null?'—':Math.round(f.duration_ms)+' ms');cell(row,(f.request_size||0)+(f.response_size||0));byId('rows').append(row);}
+ byId('empty').hidden=flows.length>0;byId('count').textContent=flows.length+' rows on this page';byId('page').textContent='Page '+(offset/limit+1);byId('previous').disabled=offset===0;byId('next').disabled=flows.length<limit;
+ byId('origins').replaceChildren();for(const origin of origins){const b=document.createElement('button');b.className='origin';b.textContent=(origin.host||'Unknown')+' ('+origin.flows+')';b.addEventListener('click',()=>filterHost(origin.host||''));byId('origins').append(b);}
+ byId('diagnostics').textContent=diagnostics.length?diagnostics.map(d=>d.created_at+' ['+d.severity+'] '+d.code+'\n'+d.message).join('\n\n'):'No diagnostics.';
+ if(selected)await inspect(selected);
+ }catch(e){showError(e)}finally{busy=false}}
+function showError(e){byId('status').textContent='Gateway unavailable or read failed: '+e.message}
+function filterHost(host){byId('host').value=host;offset=0;load()}
+byId('all-hosts').addEventListener('click',()=>filterHost(''));byId('refresh').addEventListener('click',load);
+byId('reveal-pairing').addEventListener('click',async()=>{try{const setup=await get('/api/browser/setup');byId('pairing-key').value=setup.pairing_key;byId('pairing-key').hidden=false;byId('pairing-key').select();byId('pairing-status').textContent='Copy this key into DevTools > ATO. It changes when the server restarts.'}catch(e){byId('pairing-status').textContent=e.message}});
+byId('host').addEventListener('input',()=>{offset=0;load()});
+byId('previous').addEventListener('click',()=>{offset=Math.max(0,offset-limit);load()});byId('next').addEventListener('click',()=>{offset+=limit;load()});
+load();setInterval(load,3000);
+</script></body></html>
